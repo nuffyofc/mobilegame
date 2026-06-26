@@ -615,11 +615,16 @@
                     setupDragAndDrop(tile);
                 }
 
-                tile.addEventListener('pointerdown', (e) => {
-                    tile.classList.toggle('popped');
-                    if (navigator.vibrate) navigator.vibrate(15);
-                    playOriginalPopSound(280 + (index * 12), 0.06);
-                    createTileExplosion(e.clientX, e.clientY, item.color);
+                let pointerMoved = false;
+                tile.addEventListener('pointerdown', () => { pointerMoved = false; });
+                tile.addEventListener('pointermove', () => { pointerMoved = true; });
+                tile.addEventListener('pointerup', (e) => {
+                    if (!pointerMoved) {
+                        tile.classList.toggle('popped');
+                        if (navigator.vibrate) navigator.vibrate(15);
+                        playOriginalPopSound(280 + (index * 12), 0.06);
+                        createTileExplosion(e.clientX, e.clientY, item.color);
+                    }
                 });
 
                 gridContainer.appendChild(tile);
@@ -628,7 +633,28 @@
             checkRowCompletions();
         }
 
+        let touchDragSource = null;
+        let touchDragOver = null;
+
+        function getTileAtPoint(x, y) {
+            const el = document.elementFromPoint(x, y);
+            return el ? el.closest('.tile') : null;
+        }
+
+        function swapTiles(sourceIdx, targetIdx, clientX, clientY) {
+            if (!lockedIndices.includes(targetIdx) && sourceIdx !== targetIdx) {
+                let temp = currentData[sourceIdx];
+                currentData[sourceIdx] = currentData[targetIdx];
+                currentData[targetIdx] = temp;
+                playOriginalPopSound(450, 0.1);
+                createTileExplosion(clientX, clientY, currentData[targetIdx].color);
+                renderGrid();
+                checkWinCondition();
+            }
+        }
+
         function setupDragAndDrop(tile) {
+            // Desktop drag events
             tile.addEventListener('dragstart', (e) => {
                 draggedElement = tile;
                 e.dataTransfer.setData('text/plain', tile.dataset.index);
@@ -646,21 +672,49 @@
             tile.addEventListener('drop', (e) => {
                 e.preventDefault();
                 tile.classList.remove('drag-over');
-                
                 const sourceIdx = parseInt(e.dataTransfer.getData('text/plain'));
                 const targetIdx = parseInt(tile.dataset.index);
-
-                if (!lockedIndices.includes(targetIdx) && sourceIdx !== targetIdx) {
-                    let temp = currentData[sourceIdx];
-                    currentData[sourceIdx] = currentData[targetIdx];
-                    currentData[targetIdx] = temp;
-
-                    playOriginalPopSound(450, 0.1);
-                    createTileExplosion(e.clientX, e.clientY, currentData[targetIdx].color);
-                    renderGrid();
-                    checkWinCondition();
-                }
+                swapTiles(sourceIdx, targetIdx, e.clientX, e.clientY);
             });
+
+            // Touch events for mobile
+            tile.addEventListener('touchstart', (e) => {
+                touchDragSource = tile;
+                tile.classList.add('drag-over');
+            }, { passive: true });
+
+            tile.addEventListener('touchmove', (e) => {
+                e.preventDefault();
+                const touch = e.touches[0];
+                const target = getTileAtPoint(touch.clientX, touch.clientY);
+
+                if (touchDragOver && touchDragOver !== target) {
+                    touchDragOver.classList.remove('drag-over');
+                }
+                if (target && target !== touchDragSource && !target.classList.contains('locked')) {
+                    target.classList.add('drag-over');
+                    touchDragOver = target;
+                } else {
+                    touchDragOver = null;
+                }
+            }, { passive: false });
+
+            tile.addEventListener('touchend', (e) => {
+                const touch = e.changedTouches[0];
+                const target = getTileAtPoint(touch.clientX, touch.clientY);
+
+                if (touchDragSource) touchDragSource.classList.remove('drag-over');
+                if (touchDragOver) touchDragOver.classList.remove('drag-over');
+
+                if (target && touchDragSource && target !== touchDragSource) {
+                    const sourceIdx = parseInt(touchDragSource.dataset.index);
+                    const targetIdx = parseInt(target.dataset.index);
+                    swapTiles(sourceIdx, targetIdx, touch.clientX, touch.clientY);
+                }
+
+                touchDragSource = null;
+                touchDragOver = null;
+            }, { passive: true });
         }
 
         function checkRowCompletions() {
