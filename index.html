@@ -90,6 +90,7 @@
             align-items: center;
             justify-content: center;
             box-shadow: inset 0 -5px 0 rgba(0,0,0,0.25), 0 5px 8px rgba(0,0,0,0.2);
+            touch-action: none;
         }
 
         .tile-number {
@@ -611,15 +612,14 @@
                 if (lockedIndices.includes(index)) {
                     tile.classList.add('locked');
                 } else {
-                    tile.setAttribute('draggable', 'true');
                     setupDragAndDrop(tile);
                 }
 
-                let pointerMoved = false;
-                tile.addEventListener('pointerdown', () => { pointerMoved = false; });
-                tile.addEventListener('pointermove', () => { pointerMoved = true; });
+                let tapStartX, tapStartY;
+                tile.addEventListener('pointerdown', (e) => { tapStartX = e.clientX; tapStartY = e.clientY; });
                 tile.addEventListener('pointerup', (e) => {
-                    if (!pointerMoved) {
+                    const dist = Math.hypot(e.clientX - tapStartX, e.clientY - tapStartY);
+                    if (dist < 8) {
                         tile.classList.toggle('popped');
                         if (navigator.vibrate) navigator.vibrate(15);
                         playOriginalPopSound(280 + (index * 12), 0.06);
@@ -633,11 +633,14 @@
             checkRowCompletions();
         }
 
-        let touchDragSource = null;
-        let touchDragOver = null;
+        let pointerDragSource = null;
+        let pointerDragOver = null;
 
         function getTileAtPoint(x, y) {
+            // Temporarily hide source so elementFromPoint finds the tile underneath
+            if (pointerDragSource) pointerDragSource.style.pointerEvents = 'none';
             const el = document.elementFromPoint(x, y);
+            if (pointerDragSource) pointerDragSource.style.pointerEvents = '';
             return el ? el.closest('.tile') : null;
         }
 
@@ -654,67 +657,66 @@
         }
 
         function setupDragAndDrop(tile) {
-            // Desktop drag events
-            tile.addEventListener('dragstart', (e) => {
-                draggedElement = tile;
-                e.dataTransfer.setData('text/plain', tile.dataset.index);
-            });
-
-            tile.addEventListener('dragover', (e) => {
+            tile.addEventListener('pointerdown', (e) => {
                 e.preventDefault();
-                if (!tile.classList.contains('locked') && tile !== draggedElement) {
-                    tile.classList.add('drag-over');
-                }
-            });
-
-            tile.addEventListener('dragleave', () => tile.classList.remove('drag-over'));
-
-            tile.addEventListener('drop', (e) => {
-                e.preventDefault();
-                tile.classList.remove('drag-over');
-                const sourceIdx = parseInt(e.dataTransfer.getData('text/plain'));
-                const targetIdx = parseInt(tile.dataset.index);
-                swapTiles(sourceIdx, targetIdx, e.clientX, e.clientY);
-            });
-
-            // Touch events for mobile
-            tile.addEventListener('touchstart', (e) => {
-                touchDragSource = tile;
+                pointerDragSource = tile;
+                tile.setPointerCapture(e.pointerId);
                 tile.classList.add('drag-over');
-            }, { passive: true });
+                tile.style.transform = 'scale(1.1)';
+                tile.style.zIndex = '20';
+            });
 
-            tile.addEventListener('touchmove', (e) => {
-                e.preventDefault();
-                const touch = e.touches[0];
-                const target = getTileAtPoint(touch.clientX, touch.clientY);
+            tile.addEventListener('pointermove', (e) => {
+                if (pointerDragSource !== tile) return;
+                const target = getTileAtPoint(e.clientX, e.clientY);
 
-                if (touchDragOver && touchDragOver !== target) {
-                    touchDragOver.classList.remove('drag-over');
+                if (pointerDragOver && pointerDragOver !== target) {
+                    pointerDragOver.classList.remove('drag-over');
+                    pointerDragOver.style.transform = '';
                 }
-                if (target && target !== touchDragSource && !target.classList.contains('locked')) {
+                if (target && target !== tile && !target.classList.contains('locked')) {
                     target.classList.add('drag-over');
-                    touchDragOver = target;
+                    target.style.transform = 'scale(0.92)';
+                    pointerDragOver = target;
                 } else {
-                    touchDragOver = null;
+                    pointerDragOver = null;
                 }
-            }, { passive: false });
+            });
 
-            tile.addEventListener('touchend', (e) => {
-                const touch = e.changedTouches[0];
-                const target = getTileAtPoint(touch.clientX, touch.clientY);
+            tile.addEventListener('pointerup', (e) => {
+                if (pointerDragSource !== tile) return;
 
-                if (touchDragSource) touchDragSource.classList.remove('drag-over');
-                if (touchDragOver) touchDragOver.classList.remove('drag-over');
+                tile.classList.remove('drag-over');
+                tile.style.transform = '';
+                tile.style.zIndex = '';
 
-                if (target && touchDragSource && target !== touchDragSource) {
-                    const sourceIdx = parseInt(touchDragSource.dataset.index);
-                    const targetIdx = parseInt(target.dataset.index);
-                    swapTiles(sourceIdx, targetIdx, touch.clientX, touch.clientY);
+                if (pointerDragOver) {
+                    pointerDragOver.classList.remove('drag-over');
+                    pointerDragOver.style.transform = '';
                 }
 
-                touchDragSource = null;
-                touchDragOver = null;
-            }, { passive: true });
+                const target = getTileAtPoint(e.clientX, e.clientY);
+                if (target && target !== tile) {
+                    swapTiles(parseInt(tile.dataset.index), parseInt(target.dataset.index), e.clientX, e.clientY);
+                }
+
+                pointerDragSource = null;
+                pointerDragOver = null;
+            });
+
+            tile.addEventListener('pointercancel', () => {
+                if (pointerDragSource === tile) {
+                    tile.classList.remove('drag-over');
+                    tile.style.transform = '';
+                    tile.style.zIndex = '';
+                    if (pointerDragOver) {
+                        pointerDragOver.classList.remove('drag-over');
+                        pointerDragOver.style.transform = '';
+                    }
+                    pointerDragSource = null;
+                    pointerDragOver = null;
+                }
+            });
         }
 
         function checkRowCompletions() {
