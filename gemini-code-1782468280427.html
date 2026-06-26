@@ -1,0 +1,716 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>TidyPop Pro - Nature Grounding Edition</title>
+    <style>
+        :root {
+            --bg-color: #0c0c0e;
+            --panel-color: #16161a;
+            --text-color: #ffffff;
+            --btn-active: #3ca0ff;
+        }
+
+        * {
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-user-select: none;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            overflow: hidden;
+            padding: 20px;
+            position: relative;
+        }
+
+        /* Combined Particle System and Atmospheric Canvas Overlay */
+        #fxCanvas {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none;
+            z-index: 5;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 15px;
+            z-index: 10;
+        }
+
+        .header h1 {
+            font-size: 2.2rem;
+            font-weight: 800;
+            letter-spacing: -1px;
+            background: linear-gradient(45deg, #ff4b4b, #ffb03a, #4fff69, #3ca0ff, #d14fff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .header p {
+            font-size: 0.95rem;
+            opacity: 0.5;
+            margin-top: 4px;
+        }
+
+        .grid-container {
+            background-color: var(--panel-color);
+            padding: 14px;
+            border-radius: 28px;
+            box-shadow: 0 25px 50px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.08);
+            width: 100%;
+            max-width: 390px;
+            aspect-ratio: 1;
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            grid-template-rows: repeat(5, 1fr);
+            gap: 12px;
+            touch-action: none;
+            position: relative;
+            z-index: 10;
+        }
+
+        .tile {
+            border-radius: 18px;
+            cursor: grab;
+            position: relative;
+            overflow: hidden;
+            transition: transform 0.15s cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 0.15s, background-color 0.3s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: inset 0 -5px 0 rgba(0,0,0,0.25), 0 5px 8px rgba(0,0,0,0.2);
+        }
+
+        .tile-number {
+            font-size: 1.15rem;
+            font-weight: 700;
+            color: rgba(255, 255, 255, 0.9);
+            text-shadow: 0 2px 4px rgba(0,0,0,0.4);
+            z-index: 3;
+            pointer-events: none;
+            transition: transform 0.1s, opacity 0.2s;
+        }
+
+        .tile-number.hidden {
+            opacity: 0;
+            transform: scale(0.5);
+        }
+
+        .tile::after {
+            content: '';
+            position: absolute;
+            width: 65%; height: 65%;
+            background: linear-gradient(135deg, rgba(255,255,255,0.45) 0%, rgba(255,255,255,0.05) 100%);
+            border-radius: 50%;
+            box-shadow: inset 0 2px 3px rgba(255,255,255,0.6), 0 3px 5px rgba(0,0,0,0.15);
+            transition: transform 0.1s ease, opacity 0.2s;
+            z-index: 2;
+        }
+
+        /* Glass Reflection Sweep */
+        .tile::before {
+            content: '';
+            position: absolute;
+            top: 0; left: -150%;
+            width: 50%; height: 100%;
+            background: linear-gradient(to right, rgba(255,255,255,0) 0%, rgba(255,255,255,0.4) 50%, rgba(255,255,255,0) 100%);
+            transform: skewX(-30deg);
+            z-index: 4;
+            pointer-events: none;
+        }
+
+        .tile.row-cleared::before {
+            animation: glassSweep 0.8s ease-out forwards;
+        }
+
+        @keyframes glassSweep {
+            0% { left: -150%; }
+            100% { left: 150%; }
+        }
+
+        .tile:active {
+            cursor: grabbing;
+            transform: scale(1.1);
+            box-shadow: inset 0 -2px 0 rgba(0,0,0,0.2), 0 12px 20px rgba(0,0,0,0.4);
+            z-index: 20;
+        }
+
+        .tile.popped::after {
+            transform: scale(0.78);
+            background: rgba(0, 0, 0, 0.25);
+            box-shadow: inset 0 2px 5px rgba(0,0,0,0.5), 0 1px 1px rgba(255,255,255,0.1);
+        }
+
+        .tile.locked { cursor: not-allowed; }
+        .tile.locked::before {
+            content: '';
+            position: absolute;
+            width: 6px; height: 6px;
+            background: #fff;
+            border-radius: 50%;
+            top: 8px; right: 8px;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.5);
+            z-index: 4;
+        }
+
+        .tile.drag-over {
+            transform: scale(0.92);
+            opacity: 0.8;
+        }
+
+        /* Interface Controls Layout */
+        .control-panel {
+            margin-top: 25px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            width: 100%;
+            max-width: 390px;
+            z-index: 10;
+        }
+
+        .fx-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+        }
+
+        .toggle-btn {
+            background: #222226;
+            color: rgba(255,255,255,0.6);
+            border: 1px solid rgba(255,255,255,0.05);
+            padding: 12px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            border-radius: 14px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+        }
+
+        .toggle-btn.active {
+            background: #fff;
+            color: #000;
+            box-shadow: 0 4px 12px rgba(255,255,255,0.15);
+        }
+
+        .toggle-btn#numToggle.active {
+            background: var(--btn-active);
+            color: #fff;
+            box-shadow: 0 4px 12px rgba(60, 160, 255, 0.3);
+        }
+
+        .win-screen {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.75);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            z-index: 100;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            opacity: 0;
+            transition: opacity 0.5s ease;
+        }
+
+        .win-screen.show { display: flex; opacity: 1; }
+
+        .win-card {
+            background: #1c1c21;
+            padding: 40px 30px;
+            border-radius: 32px;
+            text-align: center;
+            box-shadow: 0 15px 40px rgba(0,0,0,0.6);
+            max-width: 320px;
+            transform: scale(0.75);
+            transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            border: 1px solid rgba(255,255,255,0.05);
+        }
+
+        .win-screen.show .win-card { transform: scale(1); }
+
+        .action-btn {
+            background: linear-gradient(135deg, #fff 0%, #e0e0e0 100%);
+            color: #000;
+            border: none;
+            padding: 14px 36px;
+            font-size: 1.05rem;
+            font-weight: 700;
+            border-radius: 50px;
+            margin-top: 24px;
+            cursor: pointer;
+            box-shadow: 0 5px 15px rgba(255,255,255,0.15);
+        }
+    </style>
+</head>
+<body>
+
+    <canvas id="fxCanvas"></canvas>
+
+    <div class="header">
+        <h1>HUESHIFT</h1>
+        <p>Organize the gradient canvas smoothly</p>
+    </div>
+
+    <div class="grid-container" id="grid"></div>
+
+    <div class="control-panel">
+        <button id="numToggle" class="toggle-btn active" onclick="toggleNumbers()">🔢 Numbers: ON</button>
+        <div class="fx-grid">
+            <button id="sunBtn" class="toggle-btn" onclick="toggleFx('sun')">☀️ Sunshine</button>
+            <button id="snowBtn" class="toggle-btn" onclick="toggleFx('snow')">❄️ Snowfall</button>
+            <button id="rainBtn" class="toggle-btn" onclick="toggleFx('rain')">🌧️ Raindrops</button>
+            <button id="leafBtn" class="toggle-btn" onclick="toggleFx('leaf')">🍃 Leaves</button>
+        </div>
+    </div>
+
+    <div class="win-screen" id="winScreen">
+        <div class="win-card">
+            <h2 style="font-size: 2.2rem; margin-bottom: 12px; background: linear-gradient(to right, #ffb03a, #4fff69); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">Perfect Setup!</h2>
+            <p style="opacity: 0.7; font-size: 1rem; line-height: 1.4;">Your grid looks absolutely clean and beautiful.</p>
+            <button class="action-btn" onclick="resetGame()">Next Level</button>
+        </div>
+    </div>
+
+    <script>
+        const gridContainer = document.getElementById('grid');
+        const winScreen = document.getElementById('winScreen');
+        const canvas = document.getElementById('fxCanvas');
+        const ctx = canvas.getContext('2d');
+
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        let showNumbers = true;
+        let activeFx = { sun: false, snow: false, rain: false, leaf: false };
+
+        const solutionData = [];
+        for (let i = 0; i < 25; i++) {
+            let hue = Math.floor((i / 24) * 260);
+            solutionData.push({ id: i + 1, color: `hsl(${hue}, 80%, 55%)` });
+        }
+
+        const lockedIndices = [0, 4, 20, 24];
+        let currentData = [...solutionData];
+        let draggedElement = null;
+        
+        let visualElements = [];
+        let accumulatedElements = []; // Stores particles resting at the bottom
+        let rowsClearedState = [false, false, false, false, false];
+        let sunAngle = 0;
+
+        // --- Reverted Synthesized Pop Sound Engine ---
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+        function playOriginalPopSound(frequency = 380, duration = 0.08) {
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(frequency, audioCtx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(frequency / 2, audioCtx.currentTime + duration);
+            
+            gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+            
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start();
+            osc.stop(audioCtx.currentTime + duration);
+        }
+
+        function playWinFanfare() {
+            const notes = [261.63, 329.63, 392.00, 523.25];
+            notes.forEach((freq, index) => {
+                setTimeout(() => playOriginalPopSound(freq, 0.2), index * 120);
+            });
+        }
+
+        // --- Multi-Layer Ambient Canvas Systems ---
+        class FXItem {
+            constructor(type) {
+                this.type = type;
+                this.reset();
+            }
+            reset() {
+                this.x = Math.random() * canvas.width;
+                this.y = Math.random() * -50 - 20;
+                this.size = Math.random() * 3 + 2;
+                this.speedY = Math.random() * 1.5 + 1;
+                this.speedX = Math.random() * 1 - 0.5;
+                this.alpha = Math.random() * 0.5 + 0.3;
+
+                if (this.type === 'rain') {
+                    this.speedY = (Math.random() * 6 + 7) * 0.5;
+                    this.speedX = -0.5;
+                    this.size = Math.random() * 1.5 + 1;
+                } else if (this.type === 'leaf') {
+                    this.size = Math.random() * 8 + 6;
+                    this.speedY = Math.random() * 1 + 0.8;
+                    this.speedX = Math.random() * 1 - 0.5;
+                    this.rotation = Math.random() * Math.PI;
+                    this.rotSpeed = Math.random() * 0.02 - 0.01;
+                    this.hue = Math.random() * 30 + 90; 
+                } else if (this.type === 'popParticle') {
+                    this.isParticle = true;
+                }
+            }
+            update() {
+                if (this.isParticle) {
+                    this.speedX *= 0.92;
+                    this.speedY *= 0.92;
+                    this.x += this.speedX;
+                    this.y += this.speedY + 0.05;
+                    this.alpha -= this.decay;
+                    return;
+                }
+
+                this.y += this.speedY;
+                this.x += this.speedX;
+
+                if (this.type === 'snow') {
+                    this.speedX += Math.sin(this.y / 30) * 0.02; 
+                }
+                if (this.type === 'leaf') {
+                    this.rotation += this.rotSpeed;
+                    this.speedX += Math.sin(this.y / 20) * 0.03;
+                }
+
+                // Check ground contact (Accumulation Trigger)
+                if (this.y >= canvas.height - 5) {
+                    if (activeFx[this.type]) {
+                        accumulateElement(this.x, canvas.height, this.type, this.size, this.hue, this.rotation);
+                    }
+                    this.reset();
+                }
+
+                if (this.x < -20 || this.x > canvas.width + 20) {
+                    this.reset();
+                }
+            }
+            draw() {
+                ctx.save();
+                ctx.globalAlpha = this.alpha;
+
+                if (this.isParticle) {
+                    ctx.fillStyle = this.color;
+                    ctx.beginPath(); ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2); ctx.fill();
+                } else if (this.type === 'snow') {
+                    ctx.fillStyle = '#ffffff';
+                    ctx.beginPath(); ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2); ctx.fill();
+                } else if (this.type === 'rain') {
+                    ctx.strokeStyle = '#a5d6ff';
+                    ctx.lineWidth = this.size;
+                    ctx.beginPath(); ctx.moveTo(this.x, this.y); ctx.lineTo(this.x + this.speedX, this.y + 10); ctx.stroke();
+                } else if (this.type === 'leaf') {
+                    ctx.fillStyle = `hsl(${this.hue}, 65%, 40%)`;
+                    ctx.translate(this.x, this.y);
+                    ctx.rotate(this.rotation);
+                    ctx.beginPath();
+                    ctx.ellipse(0, 0, this.size, this.size / 2, 0, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+                ctx.restore();
+            }
+        }
+
+        // Object mapping for bottom accumulation resting attributes
+        function accumulateElement(x, y, type, size, hue, rotation) {
+            accumulatedElements.push({
+                x: x,
+                y: y - (type === 'snow' ? Math.random() * 2 : 0), // Slight height spread for snow piles
+                type: type,
+                size: size,
+                hue: hue,
+                rotation: rotation || 0,
+                createdAt: Date.now(),
+                maxRadius: type === 'rain' ? Math.random() * 15 + 10 : size // Expanding puddle ring size
+            });
+        }
+
+        function createTileExplosion(x, y, color) {
+            for (let i = 0; i < 7; i++) {
+                let p = new FXItem('popParticle');
+                p.x = x; p.y = y; p.color = color;
+                p.size = Math.random() * 2 + 1.5;
+                p.angle = Math.random() * Math.PI * 2;
+                let sp = Math.random() * 1.7 + 0.8;
+                p.speedX = Math.cos(p.angle) * sp;
+                p.speedY = Math.sin(p.angle) * sp;
+                p.alpha = 1;
+                p.decay = Math.random() * 0.025 + 0.025;
+                visualElements.push(p);
+            }
+        }
+
+        function runMasterLoop() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            if (activeFx.sun) {
+                sunAngle += 0.0015;
+                ctx.save();
+                ctx.translate(0, 0); 
+                ctx.rotate(sunAngle);
+                ctx.fillStyle = 'rgba(255, 215, 0, 0.02)';
+                const numRays = 16;
+                for (let i = 0; i < numRays; i++) {
+                    ctx.rotate((Math.PI * 2) / numRays);
+                    ctx.beginPath();
+                    ctx.moveTo(0, 0);
+                    ctx.lineTo(canvas.width * 1.5, -50);
+                    ctx.lineTo(canvas.width * 1.5, 50);
+                    ctx.closePath();
+                    ctx.fill();
+                }
+                ctx.restore();
+            }
+
+            visualElements = visualElements.filter(item => !item.isParticle || item.alpha > 0);
+
+            // Process Falling Items
+            visualElements.forEach(item => {
+                item.update();
+                item.draw();
+            });
+
+            // Process Bottom Accumulation (10 Seconds Lifetime Limit)
+            const now = Date.now();
+            accumulatedElements = accumulatedElements.filter(item => {
+                const age = now - item.createdAt;
+                return age < 10000; // Keep if under 10000ms (10 seconds)
+            });
+
+            accumulatedElements.forEach(item => {
+                const age = now - item.createdAt;
+                let alpha = 1;
+
+                // Smoothly fade out during the final 1.5 seconds of its life
+                if (age > 8500) {
+                    alpha = 1 - ((age - 8500) / 1500);
+                }
+
+                ctx.save();
+                ctx.globalAlpha = alpha;
+
+                if (item.type === 'snow') {
+                    ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+                    ctx.beginPath();
+                    ctx.arc(item.x, item.y, item.size * 1.5, 0, Math.PI, true); // Flattened dome piles
+                    ctx.fill();
+                } else if (item.type === 'rain') {
+                    // Spreading ripple ring effect
+                    const progress = age / 10000;
+                    const currentRadius = item.maxRadius * (0.2 + progress * 0.8);
+                    ctx.strokeStyle = `rgba(165, 214, 255, ${0.4 * alpha})`;
+                    ctx.lineWidth = 1;
+                    ctx.beginPath();
+                    ctx.ellipse(item.x, item.y - 2, currentRadius, currentRadius * 0.2, 0, 0, Math.PI * 2);
+                    ctx.stroke();
+                } else if (item.type === 'leaf') {
+                    ctx.fillStyle = `hsl(${item.hue}, 60%, 35%)`;
+                    ctx.translate(item.x, item.y - 2);
+                    ctx.rotate(item.rotation * 0.2); // Settle down flatter
+                    ctx.beginPath();
+                    ctx.ellipse(0, 0, item.size, item.size / 3, 0, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+
+                ctx.restore();
+            });
+
+            requestAnimationFrame(runMasterLoop);
+        }
+        runMasterLoop();
+
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') {
+                // Clear timestamps to prevent massive overflow calculation if tab is backgrounded
+                accumulatedElements = [];
+            }
+        });
+
+        function toggleFx(type) {
+            activeFx[type] = !activeFx[type];
+            document.getElementById(`${type}Btn`).classList.toggle('active', activeFx[type]);
+
+            visualElements = visualElements.filter(item => item.type !== type);
+            if (!activeFx[type]) {
+                accumulatedElements = accumulatedElements.filter(item => item.type !== type);
+            }
+
+            if (activeFx[type]) {
+                let count = type === 'rain' ? 60 : 30;
+                for (let i = 0; i < count; i++) {
+                    let item = new FXItem(type);
+                    if (!item.isParticle) item.y = Math.random() * canvas.height; 
+                    visualElements.push(item);
+                }
+            }
+        }
+
+        function toggleNumbers() {
+            showNumbers = !showNumbers;
+            const btn = document.getElementById('numToggle');
+            btn.innerText = showNumbers ? "🔢 Numbers: ON" : "🧘🏽‍♂️ Zen Mode (No Numbers)";
+            btn.classList.toggle('active', showNumbers);
+            
+            document.querySelectorAll('.tile-number').forEach(num => {
+                num.classList.toggle('hidden', !showNumbers);
+            });
+        }
+
+        // --- Core Application Logic Structure ---
+        function scrambleGrid() {
+            let mutableIndices = [];
+            for (let i = 0; i < 25; i++) {
+                if (!lockedIndices.includes(i)) mutableIndices.push(i);
+            }
+            for (let i = mutableIndices.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                const idxA = mutableIndices[i]; const idxB = mutableIndices[j];
+                let temp = currentData[idxA]; currentData[idxA] = currentData[idxB]; currentData[idxB] = temp;
+            }
+            rowsClearedState = [false, false, false, false, false];
+        }
+
+        function renderGrid() {
+            gridContainer.innerHTML = '';
+            currentData.forEach((item, index) => {
+                const tile = document.createElement('div');
+                tile.classList.add('tile');
+                tile.style.backgroundColor = item.color;
+                tile.dataset.index = index;
+
+                const numSpan = document.createElement('span');
+                numSpan.classList.add('tile-number');
+                if (!showNumbers) numSpan.classList.add('hidden');
+                numSpan.innerText = item.id;
+                tile.appendChild(numSpan);
+
+                if (lockedIndices.includes(index)) {
+                    tile.classList.add('locked');
+                } else {
+                    tile.setAttribute('draggable', 'true');
+                    setupDragAndDrop(tile);
+                }
+
+                tile.addEventListener('pointerdown', (e) => {
+                    tile.classList.toggle('popped');
+                    if (navigator.vibrate) navigator.vibrate(15);
+                    playOriginalPopSound(280 + (index * 12), 0.06);
+                    createTileExplosion(e.clientX, e.clientY, item.color);
+                });
+
+                gridContainer.appendChild(tile);
+            });
+            
+            checkRowCompletions();
+        }
+
+        function setupDragAndDrop(tile) {
+            tile.addEventListener('dragstart', (e) => {
+                draggedElement = tile;
+                e.dataTransfer.setData('text/plain', tile.dataset.index);
+            });
+
+            tile.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                if (!tile.classList.contains('locked') && tile !== draggedElement) {
+                    tile.classList.add('drag-over');
+                }
+            });
+
+            tile.addEventListener('dragleave', () => tile.classList.remove('drag-over'));
+
+            tile.addEventListener('drop', (e) => {
+                e.preventDefault();
+                tile.classList.remove('drag-over');
+                
+                const sourceIdx = parseInt(e.dataTransfer.getData('text/plain'));
+                const targetIdx = parseInt(tile.dataset.index);
+
+                if (!lockedIndices.includes(targetIdx) && sourceIdx !== targetIdx) {
+                    let temp = currentData[sourceIdx];
+                    currentData[sourceIdx] = currentData[targetIdx];
+                    currentData[targetIdx] = temp;
+
+                    playOriginalPopSound(450, 0.1);
+                    createTileExplosion(e.clientX, e.clientY, currentData[targetIdx].color);
+                    renderGrid();
+                    checkWinCondition();
+                }
+            });
+        }
+
+        function checkRowCompletions() {
+            const domTiles = document.querySelectorAll('.tile');
+            for (let r = 0; r < 5; r++) {
+                let rowPerfect = true;
+                for (let c = 0; c < 5; c++) {
+                    let idx = r * 5 + c;
+                    if (currentData[idx].id !== solutionData[idx].id) {
+                        rowPerfect = false;
+                        break;
+                    }
+                }
+                
+                if (rowPerfect && !rowsClearedState[r]) {
+                    rowsClearedState[r] = true;
+                    for (let c = 0; c < 5; c++) {
+                        let idx = r * 5 + c;
+                        setTimeout(() => {
+                            if (domTiles[idx]) {
+                                domTiles[idx].classList.add('row-cleared');
+                                playOriginalPopSound(500 + (c * 60), 0.06);
+                            }
+                        }, c * 75);
+                    }
+                } else if (!rowPerfect) {
+                    rowsClearedState[r] = false;
+                }
+            }
+        }
+
+        function checkWinCondition() {
+            const isWin = currentData.every((item, index) => item.id === solutionData[index].id);
+            if (isWin) {
+                setTimeout(() => {
+                    playWinFanfare();
+                    winScreen.classList.add('show');
+                }, 1400); 
+            }
+        }
+
+        function resetGame() {
+            winScreen.classList.remove('show');
+            currentData = [...solutionData];
+            scrambleGrid();
+            renderGrid();
+        }
+
+        scrambleGrid();
+        renderGrid();
+    </script>
+</body>
+</html>
